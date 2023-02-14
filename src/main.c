@@ -10,6 +10,16 @@
 #include "wifi.h"
 #include "mqtt.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "sdkconfig.h"
+
+
+#define TEMPERATURE_SENSOR_GPIO  4
+
+static const char *TAG = "Temperature Sensor";
+
 SemaphoreHandle_t conexaoWifiSemaphore;
 SemaphoreHandle_t conexaoMQTTSemaphore;
 
@@ -25,6 +35,17 @@ void conectadoWifi(void * params)
   }
 }
 
+void read_temperature_sensor(void *pvParameter)
+{
+    while (1)
+    {
+        int level = gpio_get_level(TEMPERATURE_SENSOR_GPIO);
+        ESP_LOGI(TAG, "Temperature Sensor: %d", level);
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+}
+
 void trataComunicacaoComServidor(void * params)
 {
   char mensagem[50];
@@ -32,10 +53,14 @@ void trataComunicacaoComServidor(void * params)
   {
     while(true)
     {
-       float temperatura = 20.0 + (float)rand()/(float)(RAND_MAX/10.0);
-       sprintf(mensagem, "temperatura1: %f", temperatura);
-       mqtt_envia_mensagem("sensores/temperatura", mensagem);
-       vTaskDelay(3000 / portTICK_PERIOD_MS);
+      int temperatura = gpio_get_level(TEMPERATURE_SENSOR_GPIO);
+      sprintf(mensagem, "{\"temperatura\": %d}",  temperatura);
+      mqtt_envia_mensagem("v1/devices/me/telemetry", mensagem);
+      printf("%s \n", mensagem);
+
+       //sprintf(mensagem, "temperatura1: %f", temperatura);
+      // mqtt_envia_mensagem("sensores/temperatura", mensagem);
+      vTaskDelay(3000 / portTICK_PERIOD_MS);
     }
   }
 }
@@ -52,8 +77,23 @@ void app_main(void)
     
     conexaoWifiSemaphore = xSemaphoreCreateBinary();
     conexaoMQTTSemaphore = xSemaphoreCreateBinary();
+    printf("kkkkkkkkkkkkkkkkk");
     wifi_start();
 
+    ESP_LOGI(TAG, "Initializing temperature sensor...");
+
+    gpio_config_t io_conf = {
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf);
+
+    xSemaphoreGive(conexaoMQTTSemaphore);
+    xSemaphoreGive(conexaoWifiSemaphore);
+
+    xTaskCreate(read_temperature_sensor, "Read Temperature Sensor", 2048, NULL, 5, NULL);
     xTaskCreate(&conectadoWifi,  "Conexão ao MQTT", 4096, NULL, 1, NULL);
     xTaskCreate(&trataComunicacaoComServidor, "Comunicação com Broker", 4096, NULL, 1, NULL);
 }
