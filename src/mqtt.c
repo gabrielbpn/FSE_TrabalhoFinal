@@ -11,15 +11,17 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
+#include "cJSON.h"
+
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
-
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
 
 #include "mqtt.h"
-
+#define LED_INFRAVERMELHO 23
 #define TAG "MQTT"
 
 extern SemaphoreHandle_t conexaoMQTTSemaphore;
@@ -32,17 +34,33 @@ static void log_error_if_nonzero(const char *message, int error_code)
     }
 }
 
+void ligarInfraVermelho(int aux) {
+    if (aux == 1) {
+        gpio_set_level(LED_INFRAVERMELHO, 1);
+        printf("Ligou o led infravermelho\n");
+    }
+    else {
+        gpio_set_level(LED_INFRAVERMELHO, 0);
+        printf("Desligou o led infravermelho\n");
+    }
+}
+
 static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
+    cJSON *parser = NULL;
+    cJSON *method = NULL;
+    cJSON *param = NULL;
+
     ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%d", base, (int) event_id);
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
     int msg_id;
+
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
         xSemaphoreGive(conexaoMQTTSemaphore);
-        msg_id = esp_mqtt_client_subscribe(client, "dispositivos/#", 0);
+        msg_id = esp_mqtt_client_subscribe(client, "v1/devices/me/rpc/request/+", 0);
         break;
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -63,7 +81,23 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
         printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
         printf("DATA=%.*s\r\n", event->data_len, event->data);
+
+        parser = cJSON_ParseWithLength(event->data, event->data_len);
+        method = cJSON_GetObjectItem(parser, "method");
+        param = cJSON_GetObjectItem(parser, "params");
+
+        printf("Method: %s\r\n", method->valuestring);
+        printf("Params: %f\r\n", param->valuedouble);
+
+        if (param->valuedouble == 1) {
+            ligarInfraVermelho(1);
+        }
+        else {
+            ligarInfraVermelho(0);
+        }
+
         break;
+    
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
         if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {

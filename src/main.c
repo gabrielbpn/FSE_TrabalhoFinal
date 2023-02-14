@@ -7,7 +7,10 @@
 #include "esp_log.h"
 #include "freertos/semphr.h"
 
+#define button 0
+
 #include "wifi.h"
+#define LED_INFRAVERMELHO 23
 #include "mqtt.h"
 
 #include "freertos/FreeRTOS.h"
@@ -16,7 +19,7 @@
 #include "sdkconfig.h"
 
 
-#define TEMPERATURE_SENSOR_GPIO  4
+#define TEMPERATURE_SENSOR_GPIO 4
 
 static const char *TAG = "Temperature Sensor";
 
@@ -65,6 +68,16 @@ void trataComunicacaoComServidor(void * params)
   }
 }
 
+void ledInfra_start() {
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL<<LED_INFRAVERMELHO);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io_conf);
+}
+
 void app_main(void)
 {
     // Inicializa o NVS
@@ -79,6 +92,8 @@ void app_main(void)
     conexaoMQTTSemaphore = xSemaphoreCreateBinary();
     printf("kkkkkkkkkkkkkkkkk");
     wifi_start();
+    ledInfra_start();
+
 
     ESP_LOGI(TAG, "Initializing temperature sensor...");
 
